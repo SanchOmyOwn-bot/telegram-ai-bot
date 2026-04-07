@@ -30,4 +30,5 @@ async def webhook(request: Request):
 
 @app.on_event("startup")
 async def startup():
+    await bot_app.initialize()          # ⭐ REQUIRED FIX
     await bot_app.bot.set_webhook(url=WEBHOOK_URL)
