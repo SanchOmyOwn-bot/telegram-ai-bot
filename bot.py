@@ -20,7 +20,7 @@ from groq import Groq
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # set your Telegram user ID in Render
+ADMIN_ID = 5766538286  # Your admin ID
 
 # FastAPI app
 app = FastAPI()
@@ -35,7 +35,7 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 user_memory = {}   # {user_id: [ {role, content}, ... ] }
 MAX_MEMORY = 10
 
-# Blocked users (in-memory)
+# Blocked users
 blocked_users = set()
 
 
@@ -55,7 +55,7 @@ def is_blocked(user_id: int) -> bool:
 
 
 def is_admin(user_id: int) -> bool:
-    return ADMIN_ID != 0 and user_id == ADMIN_ID
+    return user_id == ADMIN_ID
 
 
 # -----------------------------
@@ -87,9 +87,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help - Show this help message\n"
         "/translate <text> - Translate text to English\n"
         "/summarize <text> - Summarize long text\n"
-        "/image <prompt> - Generate an image (URL) from a prompt\n"
+        "/image <prompt> - Generate a real image from Unsplash\n"
         "/admin - Admin panel (only for admin)\n\n"
-        "You can also send voice messages, and I’ll transcribe + answer.\n"
+        "You can also send voice messages — I will transcribe and reply.\n"
         "Just chat normally and I will respond with AI."
     )
     await update.message.reply_text(text)
@@ -148,7 +148,7 @@ async def summarize(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # -----------------------------
-# /image – real image via URL
+# /image – real images from Unsplash
 # -----------------------------
 async def image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -161,24 +161,27 @@ async def image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not prompt:
         return await update.message.reply_text("Usage: /image <prompt>")
 
-    # Use Groq to refine the prompt (optional)
-    response = groq_client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {
-                "role": "system",
-                "content": "Rewrite the prompt as a detailed image generation prompt.",
-            },
-            {"role": "user", "content": prompt},
-        ],
-    )
-    refined = response.choices[0].message.content
+    try:
+        # Improve prompt using Groq
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": "Rewrite the prompt as a detailed image description."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        refined = response.choices[0].message.content
 
-    # Simple example: use a placeholder image service with the prompt in caption
-    image_url = "https://picsum.photos/512"  # placeholder real image
-    caption = f"🖼️ Image for: {prompt}\n\nPrompt detail:\n{refined}"
+        # REAL IMAGE (Unsplash)
+        image_url = f"https://source.unsplash.com/featured/512x512/?{prompt}"
 
-    await update.message.reply_photo(photo=image_url, caption=caption)
+        caption = f"🖼️ Image for: {prompt}\n\nPrompt detail:\n{refined}"
+
+        await update.message.reply_photo(photo=image_url, caption=caption)
+
+    except Exception as e:
+        print("IMAGE ERROR:", e)
+        await update.message.reply_text("Image generation failed.")
 
 
 # -----------------------------
@@ -208,10 +211,9 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 response_format="text",
             )
 
-        text = transcription  # already plain text
+        text = transcription
         await update.message.reply_text(f"🗣 Transcribed: {text}")
 
-        # Use same AI chat flow with memory
         remember(user_id, "user", text)
         messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
         messages.extend(user_memory.get(user_id, []))
@@ -333,7 +335,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "quick_summarize":
         await query.edit_message_text("Use /summarize <text> to summarize content.")
     elif query.data == "quick_image":
-        await query.edit_message_text("Use /image <prompt> to generate an image URL.")
+        await query.edit_message_text("Use /image <prompt> to generate an image.")
     elif query.data == "admin_list_blocked":
         if not is_admin(user_id):
             return
