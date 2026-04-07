@@ -39,18 +39,19 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",   # ✅ Correct model name
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": "You are a helpful AI assistant."},
                 {"role": "user", "content": user_text},
             ],
         )
 
-        answer = response.choices[0].message["content"]
+        # ✅ Correct way to access message content
+        answer = response.choices[0].message.content
         await update.message.reply_text(answer)
 
     except Exception as e:
-        print("GROQ ERROR:", e)  # <-- This will show the REAL error in Render logs
+        print("GROQ ERROR:", e)
         await update.message.reply_text("Sorry, something went wrong with the AI service.")
 
 
