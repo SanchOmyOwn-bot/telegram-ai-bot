@@ -33,6 +33,7 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 
 # Short-term memory storage (per user)
 user_memory = {}   # {user_id: [ {role, content}, ... ] }
+user_language = {} # {user_id: "en"}
 MAX_MEMORY = 10
 
 # Blocked users
@@ -56,6 +57,66 @@ def is_blocked(user_id: int) -> bool:
 
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
+
+
+# -----------------------------
+# Language detection
+# -----------------------------
+def detect_language(text: str) -> str:
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Detect the language of the text. Respond ONLY with ISO code (en, ar, es, ru, ja, zh, fr, de, etc)."
+                },
+                {"role": "user", "content": text},
+            ],
+        )
+        return response.choices[0].message.content.strip().lower()
+    except:
+        return "en"
+
+
+# -----------------------------
+# Smart Mode Language Logic
+# -----------------------------
+def update_user_language(user_id: int, text: str):
+    lang = detect_language(text)
+
+    # If user has no language yet → set it
+    if user_id not in user_language:
+        user_language[user_id] = lang
+        return
+
+    # Smart Mode:
+    # If message is long enough → switch language
+    if len(text.split()) > 2:
+        user_language[user_id] = lang
+
+
+# -----------------------------
+# Translate bot replies
+# -----------------------------
+def translate_text(text: str, target_lang: str) -> str:
+    if target_lang == "en":
+        return text
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"Translate the following text into {target_lang}. Keep meaning exactly the same."
+                },
+                {"role": "user", "content": text},
+            ],
+        )
+        return response.choices[0].message.content
+    except:
+        return text
 
 
 # -----------------------------
@@ -214,18 +275,28 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = transcription
         await update.message.reply_text(f"🗣 Transcribed: {text}")
 
+        # Update language preference
+        update_user_language(user_id, text)
+
+        # Build conversation
         remember(user_id, "user", text)
         messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
         messages.extend(user_memory.get(user_id, []))
 
+        # AI reply
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages,
         )
         answer = response.choices[0].message.content
-        remember(user_id, "assistant", answer)
 
-        await update.message.reply_text(answer)
+        # Translate AI reply
+        target_lang = user_language.get(user_id, "en")
+        translated = translate_text(answer, target_lang)
+
+        remember(user_id, "assistant", translated)
+
+        await update.message.reply_text(translated)
 
     except Exception as e:
         print("GROQ VOICE ERROR:", e)
@@ -233,7 +304,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # -----------------------------
-# AI chat with memory
+# AI chat with memory + language detection
 # -----------------------------
 async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -243,20 +314,30 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     await update.message.reply_chat_action("typing")
 
+    # Update language preference
+    update_user_language(user_id, user_text)
+
+    # Build conversation
     remember(user_id, "user", user_text)
     messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
     messages.extend(user_memory.get(user_id, []))
 
     try:
+        # AI reply
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages,
         )
 
         answer = response.choices[0].message.content
-        remember(user_id, "assistant", answer)
 
-        await update.message.reply_text(answer)
+        # Translate AI reply
+        target_lang = user_language.get(user_id, "en")
+        translated = translate_text(answer, target_lang)
+
+        remember(user_id, "assistant", translated)
+
+        await update.message.reply_text(translated)
 
     except Exception as e:
         print("GROQ ERROR:", e)
