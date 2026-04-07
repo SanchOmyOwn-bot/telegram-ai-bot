@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 from groq import Groq
 
-# Environment variables
+# Load environment variables
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -33,7 +33,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 bot_app.add_handler(CommandHandler("start", start))
 
 
-# AI assistant handler
+# AI reply handler
 async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
@@ -50,7 +50,7 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(answer)
 
     except Exception as e:
-        print("GROQ ERROR:", e)  # Logs the real error in Render
+        print("GROQ ERROR:", e)  # <-- This will show the REAL error in Render logs
         await update.message.reply_text("Sorry, something went wrong with the AI service.")
 
 
