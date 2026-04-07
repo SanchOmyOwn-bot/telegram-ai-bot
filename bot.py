@@ -1,25 +1,27 @@
-from groq import Groq
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 import os
+from fastapi import FastAPI, Request
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # We'll set this in Render
 
-client = Groq(api_key=GROQ_API_KEY)
+app = FastAPI()
+bot_app = Application.builder().token(TOKEN).build()
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
+# Example handler
+async def start(update: Update, context):
+    await update.message.reply_text("Bot is running via webhook!")
 
-    response = client.chat.completions.create(
-        model="llama3-70b-8192",
-        messages=[{"role": "user", "content": user_text}]
-    )
+bot_app.add_handler(CommandHandler("start", start))
 
-    ai_reply = response.choices[0].message.content
-    await update.message.reply_text(ai_reply)
+@app.post("/")
+async def webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, bot_app.bot)
+    await bot_app.process_update(update)
+    return {"ok": True}
 
-app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-app.add_handler(MessageHandler(filters.TEXT, handle_message))
-
-app.run_polling()
+@app.on_event("startup")
+async def startup():
+    await bot_app.bot.set_webhook(url=WEBHOOK_URL)
